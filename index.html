@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <!-- הגדרת תצוגה וחסימת זום במגע לפי המפרט -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>תפוס את הנר</title>
+    <style>
+        /* איפוס בסיסי ומניעת גלילה וזום במגע */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+            user-select: none;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            /* רקע כחול בהיר ורך (לא כהה מדי), סטטי ובניגודיות נמוכה */
+            background-color: #4f77a3;
+            background-image: linear-gradient(180deg, #5d86b3 0%, #466c96 100%);
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #f4f7fa;
+            touch-action: manipulation;
+            overscroll-behavior: none;
+        }
+
+        /* שכבת כוכבים קטנים וסטטיים בשוליים בלבד (ללא הבהוב) */
+        #bg-stars {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* קנבס ראשי למשחק ולאפקטים */
+        #game-canvas {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            z-index: 1;
+            touch-action: manipulation;
+        }
+
+        /* מסך פתיחה */
+        #start-screen {
+            position: fixed;
+            inset: 0;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: clamp(2rem, 6vh, 4rem);
+            padding: 2rem;
+            background: rgba(70, 108, 150, 0.42);
+            transition: opacity 0.55s ease, visibility 0.55s ease;
+        }
+
+        #start-screen.hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .game-title {
+            font-size: clamp(2.8rem, 9vmin, 5.5rem);
+            font-weight: 700;
+            color: #fbf3d5;
+            text-align: center;
+            letter-spacing: 0.02em;
+            text-shadow: 0 3px 14px rgba(30, 52, 78, 0.28);
+        }
+
+        /* כפתור התחל גדול ונגיש */
+        #start-btn {
+            min-width: clamp(190px, 34vmin, 290px);
+            min-height: clamp(104px, 18vmin, 150px);
+            padding: 1.2rem 2.6rem;
+            font-size: clamp(2rem, 5.5vmin, 3.2rem);
+            font-weight: 700;
+            color: #24405c;
+            background: linear-gradient(180deg, #fcf0c8 0%, #edd99b 100%);
+            border: 4px solid rgba(255, 255, 255, 0.55);
+            border-radius: 999px;
+            box-shadow: 0 8px 24px rgba(26, 46, 70, 0.22);
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        #start-btn:active {
+            transform: scale(0.96);
+            box-shadow: 0 4px 12px rgba(26, 46, 70, 0.18);
+        }
+
+        #start-btn:focus-visible {
+            outline: 4px solid #ffffff;
+            outline-offset: 6px;
+        }
+
+        /* כפתור הגדרות מבוגר בפינה העליונה (קטן, שקט ובניגודיות נמוכה עם מרווח בטיחות) */
+        #settings-trigger-wrapper {
+            position: fixed;
+            top: 14px;
+            left: 14px;
+            z-index: 30;
+            padding: 10px;
+        }
+
+        #settings-btn {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: rgba(255, 255, 255, 0.55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background-color 0.25s ease, color 0.25s ease;
+        }
+
+        #settings-btn:active,
+        #settings-btn[aria-expanded="true"] {
+            background: rgba(255, 255, 255, 0.24);
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        #settings-btn svg {
+            width: 24px;
+            height: 24px;
+            fill: currentColor;
+        }
+
+        /* חלונית הגדרות מבוגר קומפקטית (ללא גלילה) */
+        #settings-panel {
+            position: fixed;
+            top: 76px;
+            left: 18px;
+            z-index: 40;
+            width: min(320px, 90vw);
+            background: #f8fafc;
+            color: #1e293b;
+            border-radius: 20px;
+            box-shadow: 0 12px 32px rgba(20, 36, 56, 0.24);
+            padding: 14px 16px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 11px;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-8px) scale(0.98);
+            transition: opacity 0.22s ease, transform 0.22s ease, visibility 0.22s ease;
+        }
+
+        #settings-panel.open {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0) scale(1);
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 4px;
+            margin-top: -4px;
+        }
+
+        .panel-title {
+            font-size: 1.02rem;
+            font-weight: 700;
+            color: #334155;
+        }
+
+        /* כפתור סגירה (X) עם אזור לחיצה של לפחות 48px */
+        #close-settings-btn {
+            width: 48px;
+            height: 48px;
+            margin-left: -10px;
+            border: none;
+            background: transparent;
+            color: #64748b;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 1.3rem;
+            line-height: 1;
+        }
+
+        #close-settings-btn:active {
+            background: #e2e8f0;
+            color: #0f172a;
+        }
+
+        /* שורות פקדים בהגדרות */
+        .setting-row {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .setting-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #334155;
+        }
+
+        /* קבוצות כפתורי בחירה */
+        .segmented-group {
+            display: grid;
+            background: #e2e8f0;
+            padding: 3px;
+            border-radius: 11px;
+            gap: 3px;
+        }
+
+        .cols-2 { grid-template-columns: repeat(2, 1fr); }
+        .cols-3 { grid-template-columns: repeat(3, 1fr); }
+        .cols-4 { grid-template-columns: repeat(4, 1fr); }
+
+        .seg-btn {
+            min-height: 36px;
+            border: none;
+            background: transparent;
+            color: #475569;
+            font-size: 0.86rem;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.15s ease, color 0.15s ease;
+        }
+
+        .seg-btn.active {
+            background: #ffffff;
+            color: #24405c;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        /* מחוון עוצמת קול והשתקה */
+        .volume-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        input[type="range"] {
+            flex: 1;
+            height: 34px;
+            accent-color: #4a76a8;
+            cursor: pointer;
+        }
+
+        #mute-btn {
+            min-width: 68px;
+            min-height: 36px;
+            padding: 0 10px;
+            border-radius: 10px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #334155;
+            font-size: 0.86rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        #mute-btn.muted {
+            background: #fee2e2;
+            border-color: #fca5a5;
+            color: #991b1b;
+        }
+
+        /* כפתור חזרה למסך הפתיחה בלחיצה ארוכה של 2 שניות */
+        #home-hold-wrapper {
+            margin-top: 2px;
+            padding-top: 8px;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        #home-hold-wrapper.hidden {
+            display: none;
+        }
+
+        #home-hold-btn {
+            position: relative;
+            width: 100%;
+            min-height: 44px;
+            border: 1px solid #cbd5e1;
+            border-radius: 11px;
+            background: #ffffff;
+            color: #334155;
+            font-size: 0.88rem;
+            font-weight: 600;
+            overflow: hidden;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #home-hold-progress {
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 0%;
+            background: rgba(74, 118, 168, 0.22);
+            pointer-events: none;
+        }
+
+        #home-hold-text {
+            position: relative;
+            z-index: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- כוכבים קטנים וסטטיים בשוליים בלבד (ללא הבהוב) -->
+    <svg id="bg-stars" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <!-- שוליים עליונים -->
+        <circle cx="28%" cy="6%" r="1.7" fill="#fbf3d5" opacity="0.34" />
+        <circle cx="52%" cy="5%" r="1.4" fill="#ffffff" opacity="0.26" />
+        <circle cx="76%" cy="7%" r="1.8" fill="#fbf3d5" opacity="0.32" />
+        <circle cx="91%" cy="11%" r="1.5" fill="#ffffff" opacity="0.28" />
+        <!-- שוליים ימניים -->
+        <circle cx="94%" cy="32%" r="1.7" fill="#fbf3d5" opacity="0.30" />
+        <circle cx="93%" cy="58%" r="1.4" fill="#ffffff" opacity="0.25" />
+        <circle cx="95%" cy="82%" r="1.8" fill="#fbf3d5" opacity="0.32" />
+        <!-- שוליים שמאליים -->
+        <circle cx="6%" cy="36%" r="1.5" fill="#ffffff" opacity="0.25" />
+        <circle cx="7%" cy="64%" r="1.8" fill="#fbf3d5" opacity="0.30" />
+        <circle cx="5%" cy="86%" r="1.4" fill="#ffffff" opacity="0.24" />
+        <!-- שוליים תחתונים -->
+        <circle cx="22%" cy="94%" r="1.7" fill="#fbf3d5" opacity="0.32" />
+        <circle cx="48%" cy="95%" r="1.5" fill="#ffffff" opacity="0.25" />
+        <circle cx="74%" cy="93%" r="1.8" fill="#fbf3d5" opacity="0.30" />
+    </svg>
+
+    <!-- קנבס המשחק הראשי -->
+    <canvas id="game-canvas" aria-label="אזור משחק תפוס את הנר"></canvas>
+
+    <!-- מסך פתיחה -->
+    <div id="start-screen" role="dialog" aria-labelledby="main-title">
+        <h1 id="main-title" class="game-title">תפוס את הנר</h1>
+        <button id="start-btn" type="button">התחל</button>
+    </div>
+
+    <!-- אייקון הגדרות מבוגר בפינה העליונה עם מרווח בטיחות -->
+    <div id="settings-trigger-wrapper">
+        <button id="settings-btn" type="button" aria-label="הגדרות מבוגר" aria-expanded="false" aria-controls="settings-panel">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- חלונית הגדרות מבוגר -->
+    <aside id="settings-panel" role="dialog" aria-label="הגדרות מבוגר" aria-hidden="true">
+        <div class="panel-header">
+            <span class="panel-title">הגדרות</span>
+            <button id="close-settings-btn" type="button" aria-label="סגור הגדרות">✕</button>
+        </div>
+
+        <!-- מצב תנועה -->
+        <div class="setting-row">
+            <span class="setting-label">מצב תנועה</span>
+            <div class="segmented-group cols-4" id="motion-group" role="group" aria-label="מצב תנועה">
+                <button type="button" class="seg-btn" data-motion="static">נייח</button>
+                <button type="button" class="seg-btn" data-motion="slow">איטי</button>
+                <button type="button" class="seg-btn" data-motion="medium">בינוני</button>
+                <button type="button" class="seg-btn" data-motion="fast">מהיר</button>
+            </div>
+        </div>
+
+        <!-- גודל האלמנט -->
+        <div class="setting-row">
+            <span class="setting-label">גודל האלמנט</span>
+            <div class="segmented-group cols-2" id="size-group" role="group" aria-label="גודל האלמנט">
+                <button type="button" class="seg-btn" data-size="large">גדול</button>
+                <button type="button" class="seg-btn" data-size="xlarge">גדול מאוד</button>
+            </div>
+        </div>
+
+        <!-- עוצמת קול והשתקה -->
+        <div class="setting-row">
+            <label for="volume-slider" class="setting-label">עוצמת קול</label>
+            <div class="volume-controls">
+                <input type="range" id="volume-slider" min="0" max="100" step="5" value="65">
+                <button type="button" id="mute-btn" aria-pressed="false">השתק</button>
+            </div>
+        </div>
+
+        <!-- חזרה למסך הפתיחה בלחיצה ארוכה של 2 שניות (מוצג רק במסך המשחק) -->
+        <div id="home-hold-wrapper" class="hidden">
+            <button type="button" id="home-hold-btn">
+                <div id="home-hold-progress"></div>
+                <span id="home-hold-text">חזרה למסך הפתיחה (לחיצה ארוכה)</span>
+            </button>
+        </div>
+    </aside>
+
+    <script>
+        (function () {
+            'use strict';
+
+            /* =========================================================
+               1. ניהול הגדרות ושמירה בטוחה ב-localStorage
+               ========================================================= */
+            const STORAGE_KEY = 'catch_the_candle_settings_v1';
+
+            const defaultSettings = {
+                motion: 'slow',      // 'static' | 'slow' | 'medium' | 'fast'
+                size: 'large',       // 'large' | 'xlarge'
+                volume: 0.65,        // 0.0 - 1.0
+                muted: false
+            };
+
+            let settings = { ...defaultSettings };
+
+            function loadSettings() {
+                try {
+                    const raw = window.localStorage.getItem(STORAGE_KEY);
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (parsed && typeof parsed === 'object') {
+                            if (['static', 'slow', 'medium', 'fast'].includes(parsed.motion)) settings.motion = parsed.motion;
+                            if (['large', 'xlarge'].includes(parsed.size)) settings.size = parsed.size;
+                            if (typeof parsed.volume === 'number' && parsed.volume >= 0 && parsed.volume <= 1) {
+                                settings.volume = parsed.volume;
+                            }
+                            if (typeof parsed.muted === 'boolean') settings.muted = parsed.muted;
+                        }
+                    }
+                } catch (e) {
+                    // התעלמות משגיאת אחסון והמשך פעולה כרגיל
+                }
+            }
+
+            function saveSettings() {
+                try {
+                    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+                } catch (e) {
+                    // התעלמות משגיאת שמירה והמשך פעולה כרגיל
+                }
+            }
+
+            loadSettings();
+
+            /* =========================================================
+               2. מנוע צלילים רך מבוסס Web Audio (ללא קבצים חיצוניים)
+               ========================================================= */
+            let audioCtx = null;
+            let masterGain = null;
+
+            // סולם פנטטוני חם ורך
+            const PENTATONIC_MID = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25]; // C4 - C5
+
+            let lastSoundVariant = -1;
+
+            function initAudio() {
+                try {
+                    if (!audioCtx) {
+                        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                        if (AudioContextClass) {
+                            audioCtx = new AudioContextClass();
+                            masterGain = audioCtx.createGain();
+                            updateMasterVolume();
+                            masterGain.connect(audioCtx.destination);
+                        }
+                    }
+                    if (audioCtx && audioCtx.state === 'suspended') {
+                        audioCtx.resume();
+                    }
+                } catch (e) {
+                    // אם האודיו חסום, המשחק ממשיך לפעול ויזואלית כרגיל
+                }
+            }
+
+            function updateMasterVolume() {
+                if (!masterGain || !audioCtx) return;
+                const targetVol = settings.muted ? 0 : settings.volume * 0.34;
+                masterGain.gain.setTargetAtTime(targetVol, audioCtx.currentTime, 0.03);
+            }
+
+            function pickVariant(length) {
+                let idx = Math.floor(Math.random() * length);
+                if (idx === lastSoundVariant && length > 1) {
+                    idx = (idx + 1) % length;
+                }
+                lastSoundVariant = idx;
+                return idx;
+            }
+
+            // צליל נר: נבל רך / מוזיקת-בוקס עם עלייה קלה בגובה
+            function playCandleSound() {
+                initAudio();
+                if (!audioCtx || !masterGain || settings.muted || settings.volume <= 0) return;
+
+                try {
+                    const now = audioCtx.currentTime;
+                    const idx = pickVariant(PENTATONIC_MID.length - 1);
+                    const f1 = PENTATONIC_MID[idx];
+                    const f2 = PENTATONIC_MID[idx + 1];
+
+                    // תו ראשון
+                    triggerSoftPluck(f1, now, 1.35, 0.38);
+                    // תו שני עולה ברכות
+                    triggerSoftPluck(f2, now + 0.16, 1.6, 0.42);
+                } catch (e) {}
+            }
+
+            function triggerSoftPluck(freq, startTime, duration, peakGain) {
+                const osc = audioCtx.createOscillator();
+                const overtone = audioCtx.createOscillator();
+                const overtoneGain = audioCtx.createGain();
+                const env = audioCtx.createGain();
+
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, startTime);
+
+                overtone.type = 'triangle';
+                overtone.frequency.setValueAtTime(freq * 2, startTime);
+
+                overtoneGain.gain.setValueAtTime(0.11, startTime);
+                overtoneGain.gain.exponentialRampToValueAtTime(0.001, startTime + duration * 0.45);
+
+                // Fade-in קצר ורך ללא קפיצה חדה
+                env.gain.setValueAtTime(0.0001, startTime);
+                env.gain.linearRampToValueAtTime(peakGain, startTime + 0.055);
+                env.gain.exponentialRampToValueAtTime(0.0008, startTime + duration);
+
+                osc.connect(env);
+                overtone.connect(overtoneGain);
+                overtoneGain.connect(env);
+                env.connect(masterGain);
+
+                osc.start(startTime);
+                overtone.start(startTime);
+                osc.stop(startTime + duration + 0.05);
+                overtone.stop(startTime + duration + 0.05);
+            }
+
+            // צליל חלש מאוד לנגיעה מחוץ לאלמנט
+            function playMissRippleSound() {
+                initAudio();
+                if (!audioCtx || !masterGain || settings.muted || settings.volume <= 0) return;
+
+                try {
+                    const now = audioCtx.currentTime;
+                    const osc = audioCtx.createOscillator();
+                    const env = audioCtx.createGain();
+
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(210, now);
+                    osc.frequency.exponentialRampToValueAtTime(260, now + 0.22);
+
+                    env.gain.setValueAtTime(0.0001, now);
+                    env.gain.linearRampToValueAtTime(0.08, now + 0.04);
+                    env.gain.exponentialRampToValueAtTime(0.0005, now + 0.38);
+
+                    osc.connect(env);
+                    env.connect(masterGain);
+
+                    osc.start(now);
+                    osc.stop(now + 0.42);
+                } catch (e) {}
+            }
+
+            /* =========================================================
+               3. ניהול קנבס, מידות ומיקום בטוח
+               ========================================================= */
+            const canvas = document.getElementById('game-canvas');
+            const ctx = canvas.getContext('2d');
+
+            let width = window.innerWidth;
+            let height = window.innerHeight;
+            let dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+            let gameState = 'start'; // 'start' | 'playing'
+            let isPaused = false;
+            let lastTime = 0;
+
+            // מצב האלמנט היחיד על המסך
+            let item = null;
+            let waitTimer = 0;          // השהיית כשנייה לפני הופעת אלמנט חדש
+            let idleTimer = 0;          // מד חוסר פעילות להזמנה לנגוע (10 שניות)
+            let promptWiggleTimer = 0;  // זמן אנימציית נדנוד עדינה להזמנה
+            let lastCaughtPos = { x: -999, y: -999 };
+
+            // גלי מים עדינים ברקע בעת נגיעה מחוץ לאלמנט
+            const ripples = [];
+
+            function resizeCanvas() {
+                width = window.innerWidth;
+                height = window.innerHeight;
+                dpr = Math.min(window.devicePixelRatio || 1, 2);
+                canvas.width = width * dpr;
+                canvas.height = height * dpr;
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+                if (item) {
+                    clampItemWithinBounds();
+                }
+            }
+
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+
+            // חישוב מידות הנר (קצר ורחב: רוחבו כ-40% מגובהו)
+            function getElementDimensions() {
+                const shortSide = Math.min(width, height);
+                const sizeFactor = settings.size === 'xlarge' ? 0.28 : 0.22;
+                const baseDim = Math.max(134, Math.min(shortSide * sizeFactor, 260));
+
+                const h = Math.max(175, baseDim * 1.25);
+                const w = h * 0.40;
+                return { width: w, height: h, radius: h * 0.5 };
+            }
+
+            // מהירות תנועה בפיקסלים לשנייה לפי בחירת המבוגר
+            function getMotionSpeed() {
+                if (settings.motion === 'static') return 0;
+                if (settings.motion === 'medium') return 55;
+                if (settings.motion === 'fast') return 95;
+                return 28; // slow (ברירת מחדל)
+            }
+
+            // גבולות בטוחים (רחוק מהשוליים ומפינת ההגדרות העליונה השמאלית)
+            function getSafeBounds(dims) {
+                const marginX = Math.max(46, dims.width * 0.7 + 26);
+                const marginY = Math.max(52, dims.height * 0.65 + 26);
+
+                return {
+                    minX: marginX,
+                    maxX: Math.max(marginX + 10, width - marginX),
+                    minY: marginY,
+                    maxY: Math.max(marginY + 10, height - marginY)
+                };
+            }
+
+            function isInsideSettingsCorner(x, y, dims) {
+                // אזור הגנה סביב אייקון גלגל השיניים בפינה העליונה השמאלית
+                const safeRadius = Math.max(dims.width, dims.height) * 0.6 + 96;
+                return x < safeRadius && y < safeRadius;
+            }
+
+            function clampItemWithinBounds() {
+                if (!item) return;
+                const dims = getElementDimensions();
+                const bounds = getSafeBounds(dims);
+                item.x = Math.min(bounds.maxX, Math.max(bounds.minX, item.x));
+                item.y = Math.min(bounds.maxY, Math.max(bounds.minY, item.y));
+            }
+
+            /* =========================================================
+               4. יצירת האלמנט וניהול מחזור החיים שלו
+               ========================================================= */
+            function spawnNewItem(avoidX = -999, avoidY = -999) {
+                const dims = getElementDimensions();
+                const bounds = getSafeBounds(dims);
+
+                let x = (bounds.minX + bounds.maxX) * 0.5;
+                let y = (bounds.minY + bounds.maxY) * 0.5;
+
+                // בחירת מיקום אקראי הרחוק מהשוליים, מפינת ההגדרות ומהמיקום הקודם
+                for (let attempt = 0; attempt < 25; attempt++) {
+                    const cx = bounds.minX + Math.random() * (bounds.maxX - bounds.minX);
+                    const cy = bounds.minY + Math.random() * (bounds.maxY - bounds.minY);
+
+                    if (isInsideSettingsCorner(cx, cy, dims)) continue;
+
+                    const distFromLast = Math.hypot(cx - avoidX, cy - avoidY);
+                    if (distFromLast > Math.min(width, height) * 0.25 || attempt > 18) {
+                        x = cx;
+                        y = cy;
+                        break;
+                    }
+                }
+
+                // כיוון ריחוף אקראי ישר ורך
+                const angle = Math.random() * Math.PI * 2;
+
+                item = {
+                    x,
+                    y,
+                    dirX: Math.cos(angle),
+                    dirY: Math.sin(angle),
+                    swayPhase: Math.random() * Math.PI * 2,
+                    tilt: 0,
+                    scale: 0.7,
+                    alpha: 0,
+                    flameAlpha: 0,
+                    phase: 'entering', // כניסה רכה
+                    phaseTime: 0
+                };
+
+                idleTimer = 0;
+                promptWiggleTimer = 0;
+            }
+
+            function isElementCatchable() {
+                return item && (item.phase === 'entering' || item.phase === 'active');
+            }
+
+            /* =========================================================
+               5. ציור האלמנט בקוד (נר חנוכה בלבד)
+               ========================================================= */
+            function drawCandle(ctx, dims, flameAlpha) {
+                const w = dims.width;
+                const h = dims.height;
+
+                ctx.save();
+
+                // 1. בסיס עגול זהוב קטן למטה
+                const baseW = w * 1.18;
+                const baseH = h * 0.085;
+                const baseY = h * 0.42;
+
+                ctx.fillStyle = '#e5be5c';
+                ctx.strokeStyle = '#335378';
+                ctx.lineWidth = 3;
+                roundRectPath(ctx, -baseW / 2, baseY - baseH / 2, baseW, baseH, baseH * 0.5);
+                ctx.fill();
+                ctx.stroke();
+
+                // 2. פתיל קטן למעלה
+                const bodyTop = -h * 0.34;
+                const bodyBottom = baseY - baseH * 0.45;
+                const bodyH = bodyBottom - bodyTop;
+                const wickH = h * 0.085;
+
+                ctx.strokeStyle = '#3b4a5e';
+                ctx.lineWidth = Math.max(3, w * 0.055);
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(0, bodyTop);
+                ctx.lineTo(0, bodyTop - wickH);
+                ctx.stroke();
+
+                // 3. גוף הנר הקצר והרחב בצבע תכלת בהיר עם קו מתאר ברור
+                ctx.fillStyle = '#b9e2f7';
+                ctx.strokeStyle = '#335378';
+                ctx.lineWidth = 3;
+                roundRectPath(ctx, -w / 2, bodyTop, w, bodyH, w * 0.16);
+                ctx.fill();
+                ctx.stroke();
+
+                // פסים אלכסוניים עדינים בלבן בתוך גוף הנר
+                ctx.save();
+                roundRectPath(ctx, -w / 2, bodyTop, w, bodyH, w * 0.16);
+                ctx.clip();
+
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.52)';
+                const stripeCount = 4;
+                const stepY = bodyH / stripeCount;
+                for (let i = -1; i <= stripeCount; i++) {
+                    const sy = bodyTop + i * stepY;
+                    ctx.beginPath();
+                    ctx.moveTo(-w * 0.6, sy);
+                    ctx.lineTo(w * 0.6, sy + stepY * 0.42);
+                    ctx.lineTo(w * 0.6, sy + stepY * 0.68);
+                    ctx.lineTo(-w * 0.6, sy + stepY * 0.26);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+                ctx.restore();
+
+                // קו מתאר חיצוני נקי של גוף הנר
+                ctx.strokeStyle = '#335378';
+                ctx.lineWidth = 3;
+                roundRectPath(ctx, -w / 2, bodyTop, w, bodyH, w * 0.16);
+                ctx.stroke();
+
+                // 4. להבה סטטית לחלוטין על הפתיל (מופיעה בהדרגה רק לאחר תפיסה)
+                if (flameAlpha > 0.001) {
+                    const flameCenterY = bodyTop - wickH - h * 0.085;
+                    const flameH = h * 0.17;
+                    const flameW = w * 0.34;
+
+                    ctx.save();
+                    ctx.globalAlpha *= flameAlpha;
+                    ctx.translate(0, flameCenterY);
+
+                    // זוהר רך וחלש סביב הלהבה (סטטי לחלוטין)
+                    const glowGrad = ctx.createRadialGradient(0, 0, flameW * 0.1, 0, 0, flameH * 1.45);
+                    glowGrad.addColorStop(0, 'rgba(255, 224, 120, 0.38)');
+                    glowGrad.addColorStop(1, 'rgba(255, 224, 120, 0)');
+                    ctx.fillStyle = glowGrad;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, flameH * 1.45, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // צורת טיפת להבה כתומה-צהובה סטטית
+                    ctx.fillStyle = '#f59e0b';
+                    ctx.beginPath();
+                    ctx.moveTo(0, -flameH * 0.55);
+                    ctx.bezierCurveTo(flameW * 0.65, -flameH * 0.1, flameW * 0.55, flameH * 0.48, 0, flameH * 0.48);
+                    ctx.bezierCurveTo(-flameW * 0.55, flameH * 0.48, -flameW * 0.65, -flameH * 0.1, 0, -flameH * 0.55);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    // ליבת להבה צהובה בהירה (ללא תזוזה או הבהוב)
+                    ctx.fillStyle = '#fef08a';
+                    ctx.beginPath();
+                    ctx.moveTo(0, -flameH * 0.25);
+                    ctx.bezierCurveTo(flameW * 0.32, 0, flameW * 0.28, flameH * 0.34, 0, flameH * 0.34);
+                    ctx.bezierCurveTo(-flameW * 0.28, flameH * 0.34, -flameW * 0.32, 0, 0, -flameH * 0.25);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    ctx.restore();
+                }
+
+                ctx.restore();
+            }
+
+            function roundRectPath(ctx, x, y, w, h, r) {
+                const radius = Math.min(r, w / 2, h / 2);
+                ctx.beginPath();
+                ctx.moveTo(x + radius, y);
+                ctx.arcTo(x + w, y, x + w, y + h, radius);
+                ctx.arcTo(x + w, y + h, x, y + h, radius);
+                ctx.arcTo(x, y + h, x, y, radius);
+                ctx.arcTo(x, y, x + w, y, radius);
+                ctx.closePath();
+            }
+
+            function easeOutCubic(t) {
+                return 1 - Math.pow(1 - t, 3);
+            }
+
+            function easeInOutQuad(t) {
+                return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+            }
+
+            /* =========================================================
+               6. לולאת אנימציה ראשית
+               ========================================================= */
+            function updateAndRender(timestamp) {
+                if (!lastTime) lastTime = timestamp;
+                const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+                lastTime = timestamp;
+
+                ctx.clearRect(0, 0, width, height);
+
+                if (gameState === 'playing') {
+                    if (!isPaused) {
+                        // עדכון גלי מים ברקע
+                        for (let i = ripples.length - 1; i >= 0; i--) {
+                            const rp = ripples[i];
+                            rp.radius += 44 * dt;
+                            rp.alpha -= 0.42 * dt;
+                            if (rp.alpha <= 0 || rp.radius >= rp.maxRadius) {
+                                ripples.splice(i, 1);
+                            }
+                        }
+
+                        if (!item) {
+                            // המתנה של כשנייה (1.0 ש') לפני הופעת נר חדש
+                            waitTimer -= dt;
+                            if (waitTimer <= 0) {
+                                spawnNewItem(lastCaughtPos.x, lastCaughtPos.y);
+                            }
+                        } else {
+                            item.phaseTime += dt;
+
+                            if (item.phase === 'entering') {
+                                // כניסה עדינה ורכה (0.45 ש')
+                                const t = Math.min(1, item.phaseTime / 0.45);
+                                const ease = easeOutCubic(t);
+                                item.scale = 0.7 + 0.3 * ease;
+                                item.alpha = ease;
+                                if (t >= 1) {
+                                    item.phase = 'active';
+                                    item.phaseTime = 0;
+                                    item.scale = 1;
+                                    item.alpha = 1;
+                                }
+                            } else if (item.phase === 'active') {
+                                item.scale = 1;
+                                item.alpha = 1;
+
+                                const dims = getElementDimensions();
+                                const bounds = getSafeBounds(dims);
+                                const speed = getMotionSpeed();
+
+                                // תנועת ריחוף ישרה ורכה בתוך גבולות המסך
+                                if (speed > 0) {
+                                    item.x += item.dirX * speed * dt;
+                                    item.y += item.dirY * speed * dt;
+
+                                    // החזרה רכה מגבולות המסך
+                                    if (item.x <= bounds.minX) {
+                                        item.x = bounds.minX;
+                                        item.dirX = Math.abs(item.dirX);
+                                    } else if (item.x >= bounds.maxX) {
+                                        item.x = bounds.maxX;
+                                        item.dirX = -Math.abs(item.dirX);
+                                    }
+
+                                    if (item.y <= bounds.minY) {
+                                        item.y = bounds.minY;
+                                        item.dirY = Math.abs(item.dirY);
+                                    } else if (item.y >= bounds.maxY) {
+                                        item.y = bounds.maxY;
+                                        item.dirY = -Math.abs(item.dirY);
+                                    }
+
+                                    // הימנעות מכניסה לאזור כפתור ההגדרות העליון השמאלי
+                                    if (isInsideSettingsCorner(item.x, item.y, dims)) {
+                                        item.dirX = Math.abs(item.dirX);
+                                        item.dirY = Math.abs(item.dirY);
+                                    }
+                                }
+
+                                // נדנוד עדין תוך כדי ריחוף
+                                item.swayPhase += dt * 1.4;
+                                let baseTilt = speed > 0 ? Math.sin(item.swayPhase) * 0.045 : 0;
+
+                                // הזמנה לנגוע: אם אין נגיעה כ-10 שניות, מתנדנד קלות במקומו
+                                idleTimer += dt;
+                                if (idleTimer >= 10.0) {
+                                    promptWiggleTimer = 1.4; // משך הנדנוד העדין
+                                    idleTimer = 0;
+                                }
+
+                                if (promptWiggleTimer > 0) {
+                                    promptWiggleTimer -= dt;
+                                    const wiggleProgress = (1.4 - promptWiggleTimer) / 1.4;
+                                    const damping = Math.sin(wiggleProgress * Math.PI);
+                                    baseTilt += Math.sin(wiggleProgress * Math.PI * 4) * 0.09 * damping;
+                                }
+
+                                item.tilt = baseTilt;
+
+                            } else if (item.phase === 'caught_grow') {
+                                // תפיסה: גדל בעדינות פי 1.6 בתנועה חלקה (כ-0.6 שנייה)
+                                const growT = Math.min(1, item.phaseTime / 0.6);
+                                const ease = easeOutCubic(growT);
+                                item.scale = 1 + 0.6 * ease;
+                                item.tilt *= (1 - ease);
+
+                                // הופעת להבה בהדרגה (fade-in איטי של כ-0.8 שנייה)
+                                item.flameAlpha = Math.min(1, item.phaseTime / 0.8);
+
+                                if (growT >= 1) {
+                                    item.phase = 'caught_hold';
+                                    item.phaseTime = 0;
+                                }
+                            } else if (item.phase === 'caught_hold') {
+                                item.scale = 1.6;
+                                // המשך השלמת fade-in של הלהבה ל-0.8 ש' סה"כ (0.6 + 0.2)
+                                const totalFlameT = 0.6 + item.phaseTime;
+                                item.flameAlpha = Math.min(1, totalFlameT / 0.8);
+
+                                // נשאר גדול כשנייה וחצי (1.5 שניות)
+                                if (item.phaseTime >= 1.5) {
+                                    item.phase = 'caught_fade';
+                                    item.phaseTime = 0;
+                                }
+                            } else if (item.phase === 'caught_fade') {
+                                // בסוף: הלהבה כבה בהדרגה והנר מתכווץ ונעלם (כ-0.65 שנייה)
+                                const fadeT = Math.min(1, item.phaseTime / 0.65);
+                                const ease = easeInOutQuad(fadeT);
+
+                                // הלהבה כבה מעט מהר יותר מהנר עצמו
+                                item.flameAlpha = Math.max(0, 1 - fadeT * 1.4);
+
+                                item.scale = 1.6 * (1 - 0.55 * ease);
+                                item.alpha = Math.max(0, 1 - ease);
+
+                                if (fadeT >= 1) {
+                                    lastCaughtPos = { x: item.x, y: item.y };
+                                    item = null;
+                                    waitTimer = 1.0; // אחרי כשנייה מופיע נר חדש במקום אחר
+                                }
+                            }
+                        }
+                    }
+
+                    // ציור גלי מים עדינים ברקע
+                    for (const rp of ripples) {
+                        ctx.save();
+                        ctx.strokeStyle = `rgba(255, 255, 255, ${Math.max(0, rp.alpha)})`;
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.arc(rp.x, rp.y, rp.radius, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+
+                    // ציור הנר
+                    if (item) {
+                        const dims = getElementDimensions();
+                        ctx.save();
+                        ctx.globalAlpha = item.alpha;
+                        ctx.translate(item.x, item.y);
+                        ctx.scale(item.scale, item.scale);
+                        ctx.rotate(item.tilt);
+
+                        drawCandle(ctx, dims, item.flameAlpha);
+
+                        ctx.restore();
+                    }
+                }
+
+                requestAnimationFrame(updateAndRender);
+            }
+
+            requestAnimationFrame(updateAndRender);
+
+            /* =========================================================
+               7. אינטראקציות (מגע מיידי pointerdown, עכבר ומקלדת)
+               ========================================================= */
+            // בדיקה האם הנגיעה נמצאת בתוך אזור הלחיצה הסלחני (+40% מכל צד, ולפחות 130x130px)
+            function isHitWithinForgivingArea(px, py) {
+                if (!isElementCatchable()) return false;
+
+                const dims = getElementDimensions();
+                const currentScale = item.scale;
+
+                // הרחבת אזור הלחיצה ב-40% מכל צד (מכפיל 1.8) ולפחות 130px ברוחב ובגובה
+                const hitW = Math.max(130, dims.width * currentScale * 1.8);
+                const hitH = Math.max(130, dims.height * currentScale * 1.8);
+                return (
+                    Math.abs(px - item.x) <= hitW * 0.5 &&
+                    Math.abs(py - item.y) <= hitH * 0.5
+                );
+            }
+
+            function catchCurrentElement() {
+                if (!isElementCatchable()) return;
+
+                // נעילת נגיעות נוספות מיד עם התפיסה עד שהנר החדש מופיע
+                item.phase = 'caught_grow';
+                item.phaseTime = 0;
+                item.alpha = 1;
+                idleTimer = 0;
+                promptWiggleTimer = 0;
+
+                playCandleSound();
+            }
+
+            function createWaterRipple(x, y) {
+                ripples.push({
+                    x,
+                    y,
+                    radius: 10,
+                    maxRadius: 56,
+                    alpha: 0.36
+                });
+            }
+
+            // שימוש ב-pointerdown לביצוע מיידי ברגע הנגיעה
+            canvas.addEventListener('pointerdown', (e) => {
+                if (gameState !== 'playing' || isPaused) return;
+                if (e.button !== undefined && e.button !== 0 && e.pointerType === 'mouse') return;
+
+                const rect = canvas.getBoundingClientRect();
+                const px = e.clientX - rect.left;
+                const py = e.clientY - rect.top;
+
+                if (isHitWithinForgivingArea(px, py)) {
+                    catchCurrentElement();
+                } else {
+                    // נגיעה מחוץ לאלמנט: גלי מים עדינים וצליל חלש מאוד
+                    createWaterRipple(px, py);
+                    playMissRippleSound();
+                }
+            });
+
+            // תמיכה במקלדת: רווח או Enter תופסים את האלמנט (לטובת מתג חיצוני)
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    if (isSettingsOpen()) {
+                        closeSettingsPanel();
+                    }
+                    return;
+                }
+
+                if (isSettingsOpen()) return;
+
+                if (e.code === 'Space' || e.key === 'Enter') {
+                    if (document.activeElement === settingsBtn) return;
+
+                    if (gameState === 'start') {
+                        e.preventDefault();
+                        startGame();
+                    } else if (gameState === 'playing' && !isPaused) {
+                        e.preventDefault();
+                        if (isElementCatchable()) {
+                            catchCurrentElement();
+                        }
+                    }
+                }
+            });
+
+            /* =========================================================
+               8. מסך פתיחה והגדרות מבוגר
+               ========================================================= */
+            const startScreen = document.getElementById('start-screen');
+            const startBtn = document.getElementById('start-btn');
+            const settingsBtn = document.getElementById('settings-btn');
+            const settingsPanel = document.getElementById('settings-panel');
+            const closeSettingsBtn = document.getElementById('close-settings-btn');
+            const homeHoldWrapper = document.getElementById('home-hold-wrapper');
+            const homeHoldBtn = document.getElementById('home-hold-btn');
+            const homeHoldProgress = document.getElementById('home-hold-progress');
+
+            function startGame() {
+                initAudio(); // אתחול שמע לאחר אינטראקציה ראשונה (iOS)
+                gameState = 'playing';
+                startScreen.classList.add('hidden');
+                homeHoldWrapper.classList.remove('hidden');
+                ripples.length = 0;
+                spawnNewItem();
+                playMissRippleSound();
+            }
+
+            function returnToStartScreen() {
+                gameState = 'start';
+                item = null;
+                ripples.length = 0;
+                waitTimer = 0;
+                idleTimer = 0;
+                homeHoldWrapper.classList.add('hidden');
+                startScreen.classList.remove('hidden');
+                closeSettingsPanel();
+            }
+
+            startBtn.addEventListener('pointerdown', (e) => {
+                e.stopPropagation();
+                startGame();
+            });
+
+            function isSettingsOpen() {
+                return settingsPanel.classList.contains('open');
+            }
+
+            function openSettingsPanel() {
+                settingsPanel.classList.add('open');
+                settingsPanel.setAttribute('aria-hidden', 'false');
+                settingsBtn.setAttribute('aria-expanded', 'true');
+                isPaused = true;
+            }
+
+            function closeSettingsPanel() {
+                settingsPanel.classList.remove('open');
+                settingsPanel.setAttribute('aria-hidden', 'true');
+                settingsBtn.setAttribute('aria-expanded', 'false');
+                cancelHomeHold();
+                isPaused = false;
+                lastTime = performance.now();
+            }
+
+            // נגיעה באייקון או בחלונית לא מפעילה נגיעה במשחק או את כפתור "התחל"
+            settingsBtn.addEventListener('pointerdown', (e) => {
+                e.stopPropagation();
+                if (isSettingsOpen()) {
+                    closeSettingsPanel();
+                } else {
+                    openSettingsPanel();
+                }
+            });
+
+            closeSettingsBtn.addEventListener('pointerdown', (e) => {
+                e.stopPropagation();
+                closeSettingsPanel();
+            });
+
+            settingsPanel.addEventListener('pointerdown', (e) => {
+                e.stopPropagation();
+            });
+
+            document.addEventListener('pointerdown', (e) => {
+                if (isSettingsOpen()) {
+                    if (!settingsPanel.contains(e.target) && !settingsBtn.contains(e.target)) {
+                        closeSettingsPanel();
+                    }
+                }
+            });
+
+            /* =========================================================
+               9. סנכרון פקדי ההגדרות ולחיצה ארוכה לחזרה למסך הפתיחה
+               ========================================================= */
+            const motionButtons = document.querySelectorAll('#motion-group .seg-btn');
+            const sizeButtons = document.querySelectorAll('#size-group .seg-btn');
+            const volumeSlider = document.getElementById('volume-slider');
+            const muteBtn = document.getElementById('mute-btn');
+
+            function syncSettingsUI() {
+                motionButtons.forEach(btn => {
+                    btn.classList.toggle('active', btn.dataset.motion === settings.motion);
+                });
+                sizeButtons.forEach(btn => {
+                    btn.classList.toggle('active', btn.dataset.size === settings.size);
+                });
+                volumeSlider.value = Math.round(settings.volume * 100);
+                muteBtn.classList.toggle('muted', settings.muted);
+                muteBtn.setAttribute('aria-pressed', String(settings.muted));
+                muteBtn.textContent = settings.muted ? 'מושתק' : 'השתק';
+            }
+
+            syncSettingsUI();
+
+            motionButtons.forEach(btn => {
+                btn.addEventListener('pointerdown', () => {
+                    settings.motion = btn.dataset.motion;
+                    syncSettingsUI();
+                    saveSettings();
+                });
+            });
+
+            sizeButtons.forEach(btn => {
+                btn.addEventListener('pointerdown', () => {
+                    settings.size = btn.dataset.size;
+                    if (item) clampItemWithinBounds();
+                    syncSettingsUI();
+                    saveSettings();
+                });
+            });
+
+            volumeSlider.addEventListener('input', () => {
+                initAudio();
+                settings.volume = Number(volumeSlider.value) / 100;
+                if (settings.volume > 0 && settings.muted) {
+                    settings.muted = false;
+                }
+                updateMasterVolume();
+                syncSettingsUI();
+                saveSettings();
+            });
+
+            muteBtn.addEventListener('pointerdown', () => {
+                initAudio();
+                settings.muted = !settings.muted;
+                updateMasterVolume();
+                syncSettingsUI();
+                saveSettings();
+            });
+
+            // לחיצה ארוכה של 2 שניות לחזרה למסך הפתיחה
+            const HOLD_DURATION_MS = 2000;
+            let holdRafId = null;
+            let holdStartTime = 0;
+
+            function updateHomeHold(now) {
+                const elapsed = now - holdStartTime;
+                const progress = Math.min(100, (elapsed / HOLD_DURATION_MS) * 100);
+                homeHoldProgress.style.width = `${progress}%`;
+
+                if (elapsed >= HOLD_DURATION_MS) {
+                    cancelHomeHold();
+                    returnToStartScreen();
+                } else {
+                    holdRafId = requestAnimationFrame(updateHomeHold);
+                }
+            }
+
+            function startHomeHold(e) {
+                e.preventDefault();
+                cancelHomeHold();
+                holdStartTime = performance.now();
+                holdRafId = requestAnimationFrame(updateHomeHold);
+            }
+
+            function cancelHomeHold() {
+                if (holdRafId !== null) {
+                    cancelAnimationFrame(holdRafId);
+                    holdRafId = null;
+                }
+                homeHoldProgress.style.width = '0%';
+            }
+
+            homeHoldBtn.addEventListener('pointerdown', startHomeHold);
+            homeHoldBtn.addEventListener('pointerup', cancelHomeHold);
+            homeHoldBtn.addEventListener('pointerleave', cancelHomeHold);
+            homeHoldBtn.addEventListener('pointercancel', cancelHomeHold);
+
+            /* =========================================================
+               10. חסימת מחוות זום במגע בלבד (בלי לחסום זום במחשב)
+               ========================================================= */
+            ['gesturestart', 'gesturechange', 'gestureend'].forEach(evtName => {
+                document.addEventListener(evtName, (e) => {
+                    e.preventDefault();
+                }, { passive: false });
+            });
+        })();
+    </script>
+</body>
+</html>
